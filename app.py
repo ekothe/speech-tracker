@@ -7,6 +7,32 @@ AIRTABLE_TOKEN = st.secrets["Airtable"]["token"]
 BASE_ID = st.secrets["Airtable"]["base_id"]
 TABLE_NAME = st.secrets["Airtable"]["table_name"]
 
+# Word to Record ID mapping
+word_to_record_id = {
+    "pig": "recCRXiLOgFkl1kqr",
+    "ball": "recQF2QcxHd1qytcE",
+    "cup": "recNlsLOZgbisgBkN",
+    "dog": "recRtwdBvNTAR9zZg",
+    "cat": "recwotmBqv6EznIjz",
+    "go": "recixx9q5tYxW8x0D",
+    "happy": "reczz2JDNtkJD0CA2",
+    "baby": "recFAvAK12XZWDsOh",
+    "tiger": "recxMD5Zm3lzyNDUX",
+    "bucket": "recCqTnD3PWRl6D8e",
+    "mum": "rec67ZL9K4eVeyLMz",
+    "nose": "recU4Rn8HZiGPoDcC",
+    "jam": "recidStqZqkLZ2KQQ",
+    "fish": "rec2Rz2gkDZDRMyok",
+    "van": "rec83pqkZbHG1pEvm",
+    "sun": "recN2RtS3dMYjWcT5",
+    "zoo": "recEomjztOrr2RcvI",
+    "shoe": "recGS7X1DczP9Pywu",
+    "brush": "recZAfkOUf6WqMvoM",
+    "chair": "recz6Hc0HLVGcM9Bq",
+    "water": "recjUZF99cnQMTll1",
+    "yellow": "rec24IEuD5gMXkpa4"
+}
+
 # Word list with categories
 word_list = [
     {"word": "pig", "category": "Stops (P/B)"},
@@ -77,7 +103,7 @@ if selected_word:
 
         data = {
             "fields": {
-                "Target Word": [selected_word],  # Important: linking fields require an array
+                "Target Word": [word_to_record_id[selected_word]],
                 "Elicited or Imitated": elicited_or_imitated,
                 "Child's Version": child_version,
                 "Outcome": outcome,
