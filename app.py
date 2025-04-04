@@ -2,8 +2,6 @@ import streamlit as st
 import random
 import requests
 import os
-from streamlit_webrtc import webrtc_streamer, AudioProcessorBase
-import av
 import tempfile
 
 # Airtable credentials from Environment Variables
@@ -75,31 +73,18 @@ if selected_word:
     with st.container():
         st.success(f"🎯 Word to practice: **{selected_word}**")
 
-    st.write("### 🎙️ Record Audio")
+    st.write("### 🎙️ Record or Upload Audio")
 
-    class AudioProcessor(AudioProcessorBase):
-        def __init__(self):
-            self.recorded_frames = []
+    uploaded_audio = st.file_uploader("Upload or Record Speech", type=['wav', 'mp3', 'm4a'])
 
-        def recv_audio(self, frame: av.AudioFrame) -> av.AudioFrame:
-            self.recorded_frames.append(frame)
-            return frame
+    if uploaded_audio:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=uploaded_audio.name.split('.')[-1]) as tmpfile:
+            tmpfile.write(uploaded_audio.read())
+            tmpfile_path = tmpfile.name
+            st.session_state.audio_file_path = tmpfile_path
 
-    ctx = webrtc_streamer(
-        key="audio",
-        audio_receiver_size=1024,
-        audio_processor_factory=AudioProcessor,
-        media_stream_constraints={"audio": True, "video": False},
-        rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
-        async_processing=True
-    )
-
-    if ctx.state.playing:
-        st.success("🎙️ Recording in progress...")
-    elif ctx.state.recording:
-        st.info("🔴 Connecting to microphone...")
-    else:
-        st.warning("🎙️ Click allow and start speaking to record!")
+    if st.session_state.audio_file_path:
+        st.audio(st.session_state.audio_file_path)
 
     st.write("---")
 
@@ -114,22 +99,6 @@ if selected_word:
     child_version = st.text_input("🗣️ What did Lilly say?")
 
     comments = st.text_area("📝 Comments/Notes")
-
-    if ctx.state and hasattr(ctx.state, 'audio_processor') and ctx.state.audio_processor and ctx.state.audio_processor.recorded_frames:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmpfile:
-            container = av.open(tmpfile.name, mode='w', format='wav')
-            stream = container.add_stream("pcm_s16le")
-
-            for frame in ctx.state.audio_processor.recorded_frames:
-                frame.pts = None
-                frame.time_base = None
-                container.mux(frame)
-            container.close()
-
-            st.session_state.audio_file_path = tmpfile.name
-
-    if st.session_state.audio_file_path:
-        st.audio(st.session_state.audio_file_path, format='audio/wav')
 
     if st.button("🚀 Submit Attempt", use_container_width=True):
         if st.session_state.audio_file_path:
@@ -170,7 +139,7 @@ if selected_word:
                     st.error(f"Failed to log attempt. Status code: {response.status_code}")
                     st.code(response.text)
         else:
-            st.warning("⚠️ Please record audio before submitting!")
+            st.warning("⚠️ Please upload or record audio before submitting!")
 
     st.caption("🎯 Ready to record Lilly's lovely speech!")
 else:
