@@ -1,15 +1,16 @@
 import streamlit as st
 import random
 import requests
+import os
 from streamlit_webrtc import webrtc_streamer, AudioProcessorBase
 import av
 import tempfile
 
-# Airtable credentials from Streamlit Secrets
-AIRTABLE_TOKEN = st.secrets["Airtable"]["token"]
-BASE_ID = st.secrets["Airtable"]["base_id"]
-TARGET_WORDS_TABLE = st.secrets["Airtable"]["target_words_table"]
-SUBMISSIONS_TABLE = st.secrets["Airtable"]["table_name"]
+# Airtable credentials from Environment Variables
+AIRTABLE_TOKEN = os.environ["AIRTABLE_TOKEN"]
+BASE_ID = os.environ["BASE_ID"]
+TARGET_WORDS_TABLE = os.environ["TARGET_WORDS_TABLE"]
+SUBMISSIONS_TABLE = os.environ["SUBMISSIONS_TABLE"]
 
 # Fetch Target Words dynamically from Airtable
 def fetch_target_words():
@@ -113,7 +114,7 @@ if selected_word:
                 with open(tmpfile.name, "rb") as f:
                     files = {"file": ("recording.wav", f, "audio/wav")}
                     upload_response = requests.post(
-                        f"https://api.airtable.com/v0/{BASE_ID}/{SUBMISSIONS_TABLE}/{word_to_record_id[selected_word]}/Attachments",
+                        f"https://api.airtable.com/v0/{BASE_ID}/{SUBMISSIONS_TABLE}",
                         headers={"Authorization": f"Bearer {AIRTABLE_TOKEN}"},
                         files=files
                     )
