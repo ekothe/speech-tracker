@@ -1,12 +1,29 @@
 import streamlit as st
 import random
 import requests
+import boto3
+from streamlit_audio_recorder import audio_recorder
+import tempfile
 
 # Load Airtable credentials from Streamlit Secrets
 AIRTABLE_TOKEN = st.secrets["Airtable"]["token"]
 BASE_ID = st.secrets["Airtable"]["base_id"]
-TARGET_WORDS_TABLE = st.secrets["Airtable"]["target_words_table"]  # New secret for Target Words table name
+TARGET_WORDS_TABLE = st.secrets["Airtable"]["target_words_table"]
 SUBMISSIONS_TABLE = st.secrets["Airtable"]["table_name"]
+
+# Load AWS credentials from Streamlit Secrets
+AWS_ACCESS_KEY_ID = st.secrets["AWS"]["access_key_id"]
+AWS_SECRET_ACCESS_KEY = st.secrets["AWS"]["secret_access_key"]
+AWS_BUCKET_NAME = st.secrets["AWS"]["bucket_name"]
+AWS_REGION_NAME = st.secrets["AWS"]["region_name"]
+
+# Initialize S3 client
+s3 = boto3.client(
+    "s3",
+    aws_access_key_id=AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+    region_name=AWS_REGION_NAME
+)
 
 # Fetch Target Words dynamically from Airtable
 def fetch_target_words():
@@ -63,7 +80,8 @@ elif selection_mode == "Manual" and word_list:
 if selected_word:
     st.header(f"Selected Word: {selected_word}")
 
-    recording = st.file_uploader("Upload a Recording of Lilly's Attempt", type=["wav", "mp3", "m4a"])
+    # Built-in Recording Button
+    audio_bytes = audio_recorder(pause_threshold=2.0)
 
     elicited_or_imitated = st.radio("Elicited or Imitated?", ("Elicited", "Imitated"))
 
@@ -74,6 +92,24 @@ if selected_word:
     comments = st.text_area("Comments/Notes")
 
     if st.button("Submit Attempt"):
+        # Upload recording to S3
+        audio_url = None
+        if audio_bytes:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
+                temp_audio.write(audio_bytes)
+                temp_audio.flush()
+                temp_audio.seek(0)
+
+                s3_key = f"recordings/{selected_word}_{temp_audio.name.split('/')[-1]}"
+                s3.upload_file(temp_audio.name, AWS_BUCKET_NAME, s3_key, ExtraArgs={"ACL": "private"})
+
+                # Generate a pre-signed URL for Airtable
+                audio_url = s3.generate_presigned_url(
+                    ClientMethod="get_object",
+                    Params={"Bucket": AWS_BUCKET_NAME, "Key": s3_key},
+                    ExpiresIn=604800  # 7 days
+                )
+
         url = f"https://api.airtable.com/v0/{BASE_ID}/{SUBMISSIONS_TABLE}"
 
         headers = {
@@ -81,20 +117,23 @@ if selected_word:
             "Content-Type": "application/json"
         }
 
-        data = {
-            "fields": {
-                "Target Word": [word_to_record_id[selected_word]],
-                "Elicited or Imitated": elicited_or_imitated,
-                "Child's Version": child_version,
-                "Outcome": outcome,
-                "Comments": comments
-            }
+        fields_data = {
+            "Target Word": [word_to_record_id[selected_word]],
+            "Elicited or Imitated": elicited_or_imitated,
+            "Child's Version": child_version,
+            "Outcome": outcome,
+            "Comments": comments
         }
+
+        if audio_url:
+            fields_data["Recording"] = [{"url": audio_url}]
+
+        data = {"fields": fields_data}
 
         response = requests.post(url, headers=headers, json=data)
 
         if response.status_code in [200, 201]:
-            st.success("Speech attempt successfully logged!")
+            st.success("Speech attempt successfully logged with recording!")
         else:
             st.error(f"Failed to log attempt. Status code: {response.status_code}")
             st.code(response.text)
