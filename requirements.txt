@@ -1,4 +1,3 @@
 streamlit
+streamlit-webrtc
 requests
-boto3
-git+https://github.com/stefanrmmr/streamlit-audio-recorder.git
