@@ -1,8 +1,6 @@
 import streamlit as st
 import random
 import requests
-import toml
-import os
 
 # Load Airtable credentials from Streamlit Secrets
 AIRTABLE_TOKEN = st.secrets["Airtable"]["token"]
@@ -70,7 +68,6 @@ if selected_word:
     comments = st.text_area("Comments/Notes")
 
     if st.button("Submit Attempt"):
-        # Airtable API URL
         url = f"https://api.airtable.com/v0/{BASE_ID}/{TABLE_NAME}"
 
         headers = {
@@ -80,7 +77,7 @@ if selected_word:
 
         data = {
             "fields": {
-                "Target Word": selected_word,
+                "Target Word": [selected_word],  # Important: linking fields require an array
                 "Elicited or Imitated": elicited_or_imitated,
                 "Child's Version": child_version,
                 "Outcome": outcome,
@@ -90,10 +87,11 @@ if selected_word:
 
         response = requests.post(url, headers=headers, json=data)
 
-        if response.status_code == 200 or response.status_code == 201:
+        if response.status_code in [200, 201]:
             st.success("Speech attempt successfully logged!")
         else:
             st.error(f"Failed to log attempt. Status code: {response.status_code}")
+            st.code(response.text)
 
     st.caption("Don't forget to record Lilly's lovely speech!")
 else:
