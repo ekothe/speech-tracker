@@ -1,4 +1,4 @@
 streamlit
 requests
 boto3
-streamlit-audio-recorder
+git+https://github.com/stefanrmmr/streamlit-audio-recorder.git
