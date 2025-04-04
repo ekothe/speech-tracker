@@ -1,29 +1,15 @@
 import streamlit as st
 import random
 import requests
-import boto3
-from streamlit_audio_recorder import audio_recorder
+from streamlit_webrtc import webrtc_streamer, AudioProcessorBase
+import av
 import tempfile
 
-# Load Airtable credentials from Streamlit Secrets
+# Airtable credentials from Streamlit Secrets
 AIRTABLE_TOKEN = st.secrets["Airtable"]["token"]
 BASE_ID = st.secrets["Airtable"]["base_id"]
 TARGET_WORDS_TABLE = st.secrets["Airtable"]["target_words_table"]
 SUBMISSIONS_TABLE = st.secrets["Airtable"]["table_name"]
-
-# Load AWS credentials from Streamlit Secrets
-AWS_ACCESS_KEY_ID = st.secrets["AWS"]["access_key_id"]
-AWS_SECRET_ACCESS_KEY = st.secrets["AWS"]["secret_access_key"]
-AWS_BUCKET_NAME = st.secrets["AWS"]["bucket_name"]
-AWS_REGION_NAME = st.secrets["AWS"]["region_name"]
-
-# Initialize S3 client
-s3 = boto3.client(
-    "s3",
-    aws_access_key_id=AWS_ACCESS_KEY_ID,
-    aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-    region_name=AWS_REGION_NAME
-)
 
 # Fetch Target Words dynamically from Airtable
 def fetch_target_words():
@@ -80,8 +66,25 @@ elif selection_mode == "Manual" and word_list:
 if selected_word:
     st.header(f"Selected Word: {selected_word}")
 
-    # Built-in Recording Button
-    audio_bytes = audio_recorder(pause_threshold=2.0)
+    st.write("### Record Audio")
+
+    # WebRTC audio recording
+    class AudioProcessor(AudioProcessorBase):
+        def __init__(self):
+            self.recorded_frames = []
+
+        def recv_audio(self, frame: av.AudioFrame) -> av.AudioFrame:
+            self.recorded_frames.append(frame)
+            return frame
+
+    ctx = webrtc_streamer(
+        key="audio",
+        audio_receiver_size=1024,
+        audio_processor_factory=AudioProcessor,
+        media_stream_constraints={"audio": True, "video": False},
+        rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+        async_processing=True
+    )
 
     elicited_or_imitated = st.radio("Elicited or Imitated?", ("Elicited", "Imitated"))
 
@@ -92,26 +95,31 @@ if selected_word:
     comments = st.text_area("Comments/Notes")
 
     if st.button("Submit Attempt"):
-        # Upload recording to S3
         audio_url = None
-        if audio_bytes:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
-                temp_audio.write(audio_bytes)
-                temp_audio.flush()
-                temp_audio.seek(0)
 
-                s3_key = f"recordings/{selected_word}_{temp_audio.name.split('/')[-1]}"
-                s3.upload_file(temp_audio.name, AWS_BUCKET_NAME, s3_key, ExtraArgs={"ACL": "private"})
+        if ctx.state.audio_processor and ctx.state.audio_processor.recorded_frames:
+            # Save audio to temporary file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmpfile:
+                container = av.open(tmpfile.name, mode='w', format='wav')
+                stream = container.add_stream("pcm_s16le")
 
-                # Generate a pre-signed URL for Airtable
-                audio_url = s3.generate_presigned_url(
-                    ClientMethod="get_object",
-                    Params={"Bucket": AWS_BUCKET_NAME, "Key": s3_key},
-                    ExpiresIn=604800  # 7 days
-                )
+                for frame in ctx.state.audio_processor.recorded_frames:
+                    frame.pts = None
+                    frame.time_base = None
+                    container.mux(frame)
+                container.close()
 
+                # Upload to Airtable
+                with open(tmpfile.name, "rb") as f:
+                    files = {"file": ("recording.wav", f, "audio/wav")}
+                    upload_response = requests.post(
+                        f"https://api.airtable.com/v0/{BASE_ID}/{SUBMISSIONS_TABLE}/{word_to_record_id[selected_word]}/Attachments",
+                        headers={"Authorization": f"Bearer {AIRTABLE_TOKEN}"},
+                        files=files
+                    )
+
+        # Submit form fields to Airtable
         url = f"https://api.airtable.com/v0/{BASE_ID}/{SUBMISSIONS_TABLE}"
-
         headers = {
             "Authorization": f"Bearer {AIRTABLE_TOKEN}",
             "Content-Type": "application/json"
@@ -124,9 +132,6 @@ if selected_word:
             "Outcome": outcome,
             "Comments": comments
         }
-
-        if audio_url:
-            fields_data["Recording"] = [{"url": audio_url}]
 
         data = {"fields": fields_data}
 
